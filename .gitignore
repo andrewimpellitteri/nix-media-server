@@ -1,0 +1,14 @@
+# Hardware-specific configuration (don't share)
+hardware-configuration.nix
+
+# Flake lock can be regenerated
+flake.lock
+
+# Backup repository credentials
+restic-*-env
+*-password.txt
+*.key
+
+# Any secrets
+secrets/
+*.secret
