@@ -1,5 +1,5 @@
 # Hardware-specific configuration (don't share)
-hardware-configuration.nix
+# hardware-configuration.nix
 
 # Flake lock can be regenerated
 flake.lock

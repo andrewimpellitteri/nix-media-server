@@ -71,6 +71,14 @@
     variant = "dvorak";
   };
 
+  # Increase DPI for better readability on TV screen
+  services.xserver.dpi = 120;  # Default is 96. Try 120-144 for TV viewing
+
+  # Larger cursor for TV viewing
+  services.xserver.displayManager.sessionCommands = ''
+    ${pkgs.xorg.xsetroot}/bin/xsetroot -xcf ${pkgs.vanilla-dmz}/share/icons/Vanilla-DMZ/cursors/left_ptr 32
+  '';
+
   # Configure console keymap with Catppuccin theme
   console = {
     keyMap = "dvorak";
@@ -123,6 +131,12 @@
     group = "media";
   };
 
+  services.whisparr = {
+    enable = true;
+    openFirewall = true;
+    group = "media";
+  };
+
   services.prowlarr = {
     enable = true;
     openFirewall = true;
@@ -143,15 +157,83 @@
     extraPackages = with pkgs; [
       intel-media-driver  # VAAPI driver for newer Intel GPUs (Broadwell+)
       intel-compute-runtime  # OpenCL support
-    ];
+      vpl-gpu-rt #QSV
+      intel-compute-runtime
+     ];
   };
 
   # Add jellyfin to video/render groups for hardware access
   users.users.jellyfin.extraGroups = [ "video" "render" ];
 
+  # Add stash to media group for access to media directories
+  users.users.stash.extraGroups = [ "media" ];
+
   services.jellyseerr = {
     enable = true;
     openFirewall = true;
+  };
+
+  # Nginx reverse proxy for Jellyfin and Jellyseerr
+  services.nginx = {
+    enable = true;
+    recommendedProxySettings = true;
+    recommendedGzipSettings = true;
+
+    virtualHosts."localhost" = {
+      listen = [
+        { addr = "127.0.0.1"; port = 8081; }
+      ];
+
+      extraConfig = ''
+        absolute_redirect off;
+      '';
+
+      locations."/" = {
+        proxyPass = "http://127.0.0.1:8096";
+        proxyWebsockets = true;
+        extraConfig = ''
+          proxy_buffering off;
+        '';
+      };
+
+      locations."/jellyseerr/" = {
+        proxyPass = "http://127.0.0.1:5055/";
+        proxyWebsockets = true;
+        extraConfig = ''
+          # Set proper headers for the proxied application
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+          proxy_set_header X-Forwarded-Host $host;
+
+          # Handle redirects - add /jellyseerr prefix
+          proxy_redirect http://$host/ /jellyseerr/;
+          proxy_redirect https://$host/ /jellyseerr/;
+          proxy_redirect / /jellyseerr/;
+        '';
+      };
+
+      # Redirect /jellyseerr to /jellyseerr/ (with trailing slash)
+      locations."= /jellyseerr" = {
+        extraConfig = ''
+          return 301 /jellyseerr/;
+        '';
+      };
+
+      # Proxy Jellyseerr assets and API when accessed from /jellyseerr context
+      # This handles cases where assets are loaded with absolute paths
+      locations."~ ^/(_next|api|os_icon\.svg|logo_stacked\.svg|apple-touch-icon\.png|favicon.*\.png|site\.webmanifest|apple-splash.*\.jpg)" = {
+        proxyPass = "http://127.0.0.1:5055";
+        proxyWebsockets = true;
+        extraConfig = ''
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+        '';
+      };
+    };
   };
 
   # SABnzbd for NZB downloads
@@ -160,10 +242,31 @@
     group = "media";
   };
 
-  # Tailscale for remote access with Funnel for public access
+  # Stash media organizer
+  services.stash = {
+    enable = true;
+    openFirewall = true;
+    mutableSettings = false;  # Force our config (no auth)
+    settings = {
+      stash = [
+        {
+          path = "/mnt/media2/XXX";  # Media library location
+        }
+      ];
+      generated = "/var/lib/stash/generated";
+      cache = "/var/lib/stash/cache";
+    };
+    username = "temp";  # Required by module, will be overridden
+    passwordFile = "/var/lib/stash/empty-password";  # Empty file = no auth
+    jwtSecretKeyFile = "/var/lib/stash/jwt-secret";
+    sessionStoreKeyFile = "/var/lib/stash/session-secret";
+  };
+
+  # Tailscale for remote access
   services.tailscale = {
     enable = true;
     useRoutingFeatures = "both";  # Enable subnet routing and exit node
+    permitCertUid = "plexxy";  # Allow Tailscale SSH for user plexxy
   };
 
   # Enable Docker for containers
@@ -192,25 +295,43 @@
           "/var/lib/uptime-kuma:/app/data"
         ];
       };
+      recommendarr = {
+        image = "tannermiddleton/recommendarr:latest";
+        autoStart = true;
+        ports = [ "3000:3000" ];
+        volumes = [
+          "/var/lib/recommendarr:/app/server/data"
+        ];
+      };
     };
   };
 
-  # Create homarr and uptime-kuma data directories
+  # Create data directories for containerized services
   systemd.tmpfiles.rules = [
     "d /var/lib/homarr 0755 root root -"
     "d /var/lib/homarr/configs 0755 root root -"
     "d /var/lib/homarr/icons 0755 root root -"
     "d /var/lib/homarr/data 0755 root root -"
     "d /var/lib/uptime-kuma 0755 root root -"
+    "d /var/lib/recommendarr 0755 root root -"
+    # Stash directories and secret files
+    "d /var/lib/stash/generated 0755 stash stash -"
+    "d /var/lib/stash/cache 0755 stash stash -"
+    "d /mnt/media2/XXX 0775 plexxy media -"
+    "f /var/lib/stash/empty-password 0600 stash stash -"
+    "f /var/lib/stash/jwt-secret 0600 stash stash - jwt-secret-change-me"
+    "f /var/lib/stash/session-secret 0600 stash stash - session-secret-change-me"
     # NZB download directories with proper permissions for SABnzbd
     "d /mnt/media2/NZB 0775 plexxy media -"
     "d /mnt/media2/NZB/Pending 0775 plexxy media -"
     "d /mnt/media2/NZB/Complete 0775 plexxy media -"
     "d /mnt/media2/NZB/Complete/TV 0775 plexxy media -"
     "d /mnt/media2/NZB/Complete/Movies 0775 plexxy media -"
+    "d /mnt/media2/NZB/Complete/XXX 0775 plexxy media -"
     "z /mnt/media2/NZB 0775 plexxy media -"
     # Restic backup directory
     "d /mnt/media2/backups 0700 root root -"
+    "d /tmp/jellyfin-transcode 0750 jellyfin render - -"
   ];
 
 
@@ -223,7 +344,10 @@
     allowedTCPPorts = [
       7575  # Homarr
       8080  # SABnzbd
+      3000  # Recommendarr
       3001  # Uptime Kuma
+      6969  # Whisparr
+      9999  # Stash
     ];
   };
 
@@ -231,7 +355,7 @@
   users.users.plexxy = {
     isNormalUser = true;
     description = "plexxy";
-    extraGroups = [ "networkmanager" "wheel" "sonarr" "radarr" "prowlarr" "jellyfin" "docker" "media" ];
+    extraGroups = [ "networkmanager" "wheel" "sonarr" "radarr" "whisparr" "prowlarr" "jellyfin" "stash" "docker" "media" ];
     shell = pkgs.zsh;
     packages = with pkgs; [
     #  thunderbird
@@ -298,8 +422,20 @@
 
   # List services that you want to enable:
 
-  # Enable the OpenSSH daemon.
-  # services.openssh.enable = true;
+  # Enable the OpenSSH daemon with secure configuration
+  # Restricted to Tailscale network only
+  services.openssh = {
+    enable = true;
+    settings = {
+      # Security hardening
+      PasswordAuthentication = false;  # Disable password auth, keys only
+      PermitRootLogin = "no";  # No root login
+      KbdInteractiveAuthentication = false;  # No keyboard-interactive auth
+      X11Forwarding = false;  # Disable X11 forwarding
+      # Allow only specific users
+      AllowUsers = [ "plexxy" ];
+    };
+  };
 
   # Open ports in the firewall.
   # networking.firewall.allowedTCPPorts = [ ... ];
@@ -325,12 +461,15 @@
       paths = [
         "/var/lib/sonarr"
         "/var/lib/radarr"
+        "/var/lib/whisparr"
         "/var/lib/private/prowlarr"
         "/var/lib/jellyfin"
         "/var/lib/private/jellyseerr"
         "/var/lib/sabnzbd"
+        "/var/lib/stash"
         "/var/lib/homarr"
         "/var/lib/uptime-kuma"
+        "/var/lib/recommendarr"
         "/etc/nixos"  # Backup NixOS configuration too
       ];
 
