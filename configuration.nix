@@ -31,11 +31,6 @@
   };
 
   networking.hostName = "nixos"; # Define your hostname.
-  # networking.wireless.enable = true;  # Enables wireless support via wpa_supplicant.
-
-  # Configure network proxy if necessary
-  # networking.proxy.default = "http://user:password@proxy:port/";
-  # networking.proxy.noProxy = "127.0.0.1,localhost,internal.domain";
 
   # Enable networking
   networking.networkmanager.enable = true;
@@ -72,7 +67,7 @@
   };
 
   # Increase DPI for better readability on TV screen
-  services.xserver.dpi = 120;  # Default is 96. Try 120-144 for TV viewing
+  services.xserver.dpi = 144;  # Default is 96. Try 120-144 for TV viewing
 
   # Larger cursor for TV viewing
   services.xserver.displayManager.sessionCommands = ''
@@ -88,6 +83,13 @@
   # Enable CUPS to print documents.
   services.printing.enable = true;
 
+  hardware.bluetooth = {
+    enable = true;
+    powerOnBoot = true;
+  };
+ 
+  services.blueman.enable = true;
+
   # Enable sound with pipewire.
   services.pulseaudio.enable = false;
   security.rtkit.enable = true;
@@ -98,7 +100,7 @@
     pulse.enable = true;
     # If you want to use JACK applications, uncomment this
     #jack.enable = true;
-
+    wireplumber.enable = true;
     # use the example session manager (no others are packaged yet so this is enabled by default,
     # no need to redefine it in your config for now)
     #media-session.enable = true;
