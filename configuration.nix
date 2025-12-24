@@ -144,10 +144,30 @@
     openFirewall = true;
   };
 
+  services.bazarr = {
+    enable = true;
+    openFirewall = true;
+    group = "media";
+  };
+
   # Jellyfin with hardware transcoding (Intel QuickSync)
   services.jellyfin = {
     enable = true;
     openFirewall = true;
+  };
+
+  services.ntfy-sh = {
+    enable = true;
+    settings = {
+      base-url = "http://100.99.80.92:2586";  # Replace with your server's Tailscale IP
+      listen-http = ":2586";  # Using 2586 instead of 8080
+      cache-file = "/var/lib/ntfy-sh/cache.db";
+      cache-duration = "12h";
+      
+      # Optional but recommended - require authentication
+      auth-file = "/var/lib/ntfy-sh/auth.db";
+      auth-default-access = "deny-all";
+    };
   };
 
   # Enable Intel graphics driver for hardware transcoding
@@ -244,12 +264,238 @@
     group = "media";
   };
 
+  # Recyclarr configuration for Sonarr/Radarr quality profiles
+  environment.etc."recyclarr/recyclarr.yml".text = ''
+    sonarr:
+      series:
+        base_url: http://localhost:8989
+        api_key: !env_var SONARR_API_KEY
+
+        quality_definition:
+          type: series
+          preferred_ratio: 0.5  # Prefer middle of quality range, not max
+
+        quality_profiles:
+          - name: Compact 1080p
+            reset_unmatched_scores:
+              enabled: true
+            upgrade:
+              allowed: true
+              until_quality: WEB 1080p
+              until_score: 5000
+            min_format_score: 0
+            quality_sort: top
+            qualities:
+              - name: WEB 1080p
+                qualities:
+                  - WEBDL-1080p
+                  - WEBRip-1080p
+              - name: Bluray-1080p  # Encodes only, not remux
+              - name: HDTV-1080p
+
+        custom_formats:
+          # BOOST: x265 (massive space savings)
+          - trash_ids:
+              - 47435ece6b99a0b477caf360e79ba0bb  # x265 (HD)
+            quality_profiles:
+              - name: Compact 1080p
+                score: 150
+
+          # BOOST: Compatible audio
+          - trash_ids:
+              - a570d4a0e56a2874b64e5bfa55202a1b  # DD+
+              - 63487786a8b01b7f20dd2bc90dd4a477  # DD
+              - 8e109e50e0a0b83a5098b056e13bf6db  # DTS
+            quality_profiles:
+              - name: Compact 1080p
+                score: 50
+
+          # PENALIZE: Lossless audio (bloat)
+          - trash_ids:
+              - 185f1dd7264c4562b9022d963ac37424  # TrueHD
+              - 1af239278386be2919e1bcee0bde047e  # DD+ Atmos
+              - 417804f7f2c4308c1f4c5d380d4c4475  # Atmos
+              - 3cafb66171b47f226146a0770576870f  # TrueHD Atmos
+              - dcf3ec6938fa32445f590a4da84256cd  # DTS-HD MA
+              - e77382bcfeba57cb83744c9c5449b401  # DTS-HD HRA
+            quality_profiles:
+              - name: Compact 1080p
+                score: -100
+
+          # BLOCK: Remuxes and bloat
+          - trash_ids:
+              - 3a3ff47579026e76d6504ebea39390de  # Remux Tier 01
+              - 9f98181fe5a3fbeb0cc29340da2a468a  # Remux Tier 02
+              - 8baaf0b3142bf4d94c42a724f034e27a  # Remux Tier 03
+              - 85c61753df5da1fb2aab6f2a47426b09  # BR-DISK
+            quality_profiles:
+              - name: Compact 1080p
+                score: -10000
+
+          # BLOCK: Garbage
+          - trash_ids:
+              - 9c11cd3f07101cdba90a2d81cf0e56b4  # LQ
+              - e2315f990da2e2cbfc9fa5b7a6c62170  # LQ (Release Title)
+              - fbcb31d8dabd2a319072b84fc0b7249c  # Extras
+            quality_profiles:
+              - name: Compact 1080p
+                score: -10000
+
+          # PREFER: Good encode groups
+          - trash_ids:
+              - c20f169ef63c5f40c2def54abaf4438e  # WEB Tier 01
+              - 403816d65392c79236dcb6dd591aedd4  # WEB Tier 02
+              - af94e0fe497124d1f9ce732069ec8c3b  # WEB Tier 03
+            quality_profiles:
+              - name: Compact 1080p
+                score: 75
+
+          # Streaming services
+          - trash_ids:
+              - d660701077794679fd59e8bdf4ce3a29  # AMZN
+              - f67c9ca88f463a48346062e8ad07713f  # ATVP
+              - 89358767a60cc28783cdc3d0be9388a4  # DSNP
+              - 81d1fbf600e2540cee87f3a23f9d3c1c  # MAX
+              - d34870697c9db575f17700212167be23  # NF
+            quality_profiles:
+              - name: Compact 1080p
+                score: 25
+
+    radarr:
+      movies:
+        base_url: http://localhost:7878
+        api_key: !env_var RADARR_API_KEY
+
+        quality_definition:
+          type: movie
+          preferred_ratio: 0.5
+
+        quality_profiles:
+          - name: Compact 1080p
+            reset_unmatched_scores:
+              enabled: true
+            upgrade:
+              allowed: true
+              until_quality: WEB 1080p
+              until_score: 5000
+            min_format_score: 0
+            quality_sort: top
+            qualities:
+              - name: WEB 1080p
+                qualities:
+                  - WEBDL-1080p
+                  - WEBRip-1080p
+              - name: Bluray-1080p
+              - name: HDTV-1080p
+
+        custom_formats:
+          # BOOST: x265
+          - trash_ids:
+              - dc98083864ea246d05a42df0d05f81cc  # x265 (HD)
+            quality_profiles:
+              - name: Compact 1080p
+                score: 150
+
+          # BOOST: Compatible lossy audio
+          - trash_ids:
+              - 89dac1be53d5c2c1e2dafe43c3c86c57  # DD
+              - c1a25cd67b5d2e08287c957b1eb903ec  # DTS
+            quality_profiles:
+              - name: Compact 1080p
+                score: 50
+
+          # PENALIZE: Lossless audio
+          - trash_ids:
+              - 496f355514737f7d83bf7aa4d24f8169  # TrueHD Atmos
+              - 2f22d89048b01681dde8afe203bf2e95  # DTS-HD MA
+              - 417804f7f2c4308c1f4c5d380d4c4475  # Atmos
+              - 3cafb66171b47f226146a0770576870f  # TrueHD
+            quality_profiles:
+              - name: Compact 1080p
+                score: -100
+
+          # BLOCK: Remuxes
+          - trash_ids:
+              - ed27ebfef2f323e964fb1f61f24a63e5  # HQ-Remux
+              - 3a3ff47579026e76d6504ebea39390de  # Remux Tier 01
+              - 9f98181fe5a3fbeb0cc29340da2a468a  # Remux Tier 02
+              - 8baaf0b3142bf4d94c42a724f034e27a  # Remux Tier 03
+              - ed38b889b31be83fda192888e2286d83  # BR-DISK
+            quality_profiles:
+              - name: Compact 1080p
+                score: -10000
+
+          # BLOCK: Garbage and unnecessary
+          - trash_ids:
+              - 90a6f9a284dff5103f6346090e6280c8  # LQ
+              - e204b80c87be9497a8a6eaff48f72905  # LQ (Release Title)
+              - b8cd450cbfa689c0259a01d9e29ba3d6  # 3D
+              - 0a3f082873eb454bde444150b70253cc  # Extras
+              - bfd8eb01832d646a0a89c4deb46f8564  # Upscaled
+            quality_profiles:
+              - name: Compact 1080p
+                score: -10000
+
+          # PREFER: Good encode groups
+          - trash_ids:
+              - c20f169ef63c5f40c2def54abaf4438e  # WEB Tier 01
+              - 403816d65392c79236dcb6dd591aedd4  # WEB Tier 02
+              - af94e0fe497124d1f9ce732069ec8c3b  # WEB Tier 03
+              - ed27ebfef2f323e964fb1f61f24a63e5  # Encode Tier 01
+              - c20c8647f2746a1f4c4262b0fbbeeeae  # Encode Tier 02
+            quality_profiles:
+              - name: Compact 1080p
+                score: 75
+
+          # Streaming services
+          - trash_ids:
+              - b3b3a6ac74ecbd56bcdbefa4799fb9df  # AMZN
+              - 40e9380490e748672c2522eaaeb692f7  # ATVP
+              - 84272245b2988854bfb76a16e60baea5  # DSNP
+              - 6a061313d22e51e0f25b7cd4dc065233  # MAX
+              - 170b1d363bd8516fbf3a3eb05d4faff6  # NF
+            quality_profiles:
+              - name: Compact 1080p
+                score: 25
+
+          # Movie versions (still want these)
+          - trash_ids:
+              - 0f12c086e289cf966fa5948eac571f44  # Hybrid
+              - e0c07d59beb37348e975a930d5e50319  # Criterion
+              - 570bc9ebecd92723d2d21500f4be314c  # Remaster
+            quality_profiles:
+              - name: Compact 1080p
+                score: 25
+  '';
+
+  # Recyclarr systemd service
+  systemd.services.recyclarr = {
+    description = "Recyclarr Sync";
+    after = [ "network.target" "sonarr.service" "radarr.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = "${pkgs.recyclarr}/bin/recyclarr sync --config /etc/recyclarr/recyclarr.yml";
+      EnvironmentFile = "/var/lib/recyclarr/env";
+    };
+  };
+
+  # Recyclarr timer for daily syncs
+  systemd.timers.recyclarr = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnCalendar = "daily";
+      Persistent = true;
+    };
+  };
+
   # Stash media organizer
   services.stash = {
     enable = true;
     openFirewall = true;
     mutableSettings = false;  # Force our config (no auth)
     settings = {
+      host = "0.0.0.0";  # Listen on all interfaces for Tailscale access
+      dangerous_allow_public_without_auth = true;  # Safe with Tailscale
       stash = [
         {
           path = "/mnt/media2/XXX";  # Media library location
@@ -316,6 +562,8 @@
     "d /var/lib/homarr/data 0755 root root -"
     "d /var/lib/uptime-kuma 0755 root root -"
     "d /var/lib/recommendarr 0755 root root -"
+    # Recyclarr directory
+    "d /var/lib/recyclarr 0750 root root -"
     # Stash directories and secret files
     "d /var/lib/stash/generated 0755 stash stash -"
     "d /var/lib/stash/cache 0755 stash stash -"
@@ -331,9 +579,14 @@
     "d /mnt/media2/NZB/Complete/Movies 0775 plexxy media -"
     "d /mnt/media2/NZB/Complete/XXX 0775 plexxy media -"
     "z /mnt/media2/NZB 0775 plexxy media -"
+    # Media library directories - fix permissions for *arr services
+    "z /mnt/media1/Movies 0775 plexxy media -"
+    "z /mnt/media2/Movies 0775 plexxy media -"
+    "z /mnt/media1/TV 0775 plexxy media -"
+    "z /mnt/media2/TV 0775 plexxy media -"
     # Restic backup directory
     "d /mnt/media2/backups 0700 root root -"
-    "d /tmp/jellyfin-transcode 0750 jellyfin render - -"
+    "d /tmp/jellyfin-transcode 0755 jellyfin render - -"
   ];
 
 
@@ -344,6 +597,7 @@
     trustedInterfaces = [ "tailscale0" ];
     allowedUDPPorts = [ config.services.tailscale.port ];
     allowedTCPPorts = [
+      6767  # Bazarr
       7575  # Homarr
       8080  # SABnzbd
       3000  # Recommendarr
@@ -357,7 +611,7 @@
   users.users.plexxy = {
     isNormalUser = true;
     description = "plexxy";
-    extraGroups = [ "networkmanager" "wheel" "sonarr" "radarr" "whisparr" "prowlarr" "jellyfin" "stash" "docker" "media" ];
+    extraGroups = [ "networkmanager" "wheel" "sonarr" "radarr" "whisparr" "prowlarr" "bazarr" "jellyfin" "stash" "docker" "media" ];
     shell = pkgs.zsh;
     packages = with pkgs; [
     #  thunderbird
@@ -397,6 +651,9 @@
   "flakes"
   ];
 
+  environment.variables = {
+    XCURSOR_SIZE = "32";
+  };
 
   # List packages installed in system profile. To search, run:
   # $ nix search wget
@@ -412,6 +669,7 @@
     tree
     git
     restic
+    recyclarr
   ];
 
   # Some programs need SUID wrappers, can be configured further or are
@@ -465,6 +723,7 @@
         "/var/lib/radarr"
         "/var/lib/whisparr"
         "/var/lib/private/prowlarr"
+        "/var/lib/bazarr"
         "/var/lib/jellyfin"
         "/var/lib/private/jellyseerr"
         "/var/lib/sabnzbd"
@@ -472,6 +731,7 @@
         "/var/lib/homarr"
         "/var/lib/uptime-kuma"
         "/var/lib/recommendarr"
+        "/var/lib/recyclarr"
         "/etc/nixos"  # Backup NixOS configuration too
       ];
 
