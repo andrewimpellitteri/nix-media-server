@@ -156,20 +156,6 @@
     openFirewall = true;
   };
 
-  services.ntfy-sh = {
-    enable = true;
-    settings = {
-      base-url = "http://100.99.80.92:2586";  # Replace with your server's Tailscale IP
-      listen-http = ":2586";  # Using 2586 instead of 8080
-      cache-file = "/var/lib/ntfy-sh/cache.db";
-      cache-duration = "12h";
-      
-      # Optional but recommended - require authentication
-      auth-file = "/var/lib/ntfy-sh/auth.db";
-      auth-default-access = "deny-all";
-    };
-  };
-
   # Enable Intel graphics driver for hardware transcoding
   boot.kernelModules = [ "i915" ];
 
@@ -527,7 +513,7 @@
       homarr = {
         image = "ghcr.io/ajnart/homarr:latest";
         autoStart = true;
-        ports = [ "7575:7575" ];
+        extraOptions = [ "--network=host" ];  # Use host network to access system services
         volumes = [
           "/var/lib/homarr/configs:/app/data/configs"
           "/var/lib/homarr/icons:/app/public/icons"
@@ -546,9 +532,18 @@
       recommendarr = {
         image = "tannermiddleton/recommendarr:latest";
         autoStart = true;
-        ports = [ "3000:3000" ];
+        extraOptions = [ "--network=host" ];  # Use host network to access sonarr/radarr/jellyfin
         volumes = [
           "/var/lib/recommendarr:/app/server/data"
+        ];
+      };
+      dashdot = {
+        image = "mauricenino/dashdot:latest";
+        autoStart = true;
+        ports = [ "3002:3001" ];  # Host:Container - avoids conflict with Uptime Kuma
+        extraOptions = [ "--privileged" ];
+        volumes = [
+          "/:/mnt/host:ro"
         ];
       };
     };
@@ -580,6 +575,9 @@
     "d /mnt/media2/NZB/Complete/XXX 0775 plexxy media -"
     "z /mnt/media2/NZB 0775 plexxy media -"
     # Media library directories - fix permissions for *arr services
+    # Fix parent mount points first to avoid unsafe path transitions
+    "z /mnt/media1 0775 plexxy media -"
+    "z /mnt/media2 0775 plexxy media -"
     "z /mnt/media1/Movies 0775 plexxy media -"
     "z /mnt/media2/Movies 0775 plexxy media -"
     "z /mnt/media1/TV 0775 plexxy media -"
@@ -602,6 +600,7 @@
       8080  # SABnzbd
       3000  # Recommendarr
       3001  # Uptime Kuma
+      3002  # Dashdot
       6969  # Whisparr
       9999  # Stash
     ];
@@ -634,6 +633,11 @@
     };
     shellAliases = {
       nrs = "sudo nixos-rebuild switch --flake /etc/nixos#nixos";
+      # Python shortcuts
+      py = "python3";
+      ipy = "python3 -i";  # Interactive Python
+      # Nix-shell shortcuts (no more awful syntax!)
+      pyshell = "nix-shell -p python3 python3Packages.requests";
     };
   };
 
@@ -670,6 +674,11 @@
     git
     restic
     recyclarr
+    uv  # Modern Python package manager
+    (python3.withPackages (ps: with ps; [
+      requests
+      # Add other common packages here as needed
+    ]))
   ];
 
   # Some programs need SUID wrappers, can be configured further or are
