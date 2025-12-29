@@ -145,6 +145,7 @@
   home.packages = with pkgs; [
     # System monitoring
     htop
+    btop
     neofetch
 
     # Terminal tools

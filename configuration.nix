@@ -56,6 +56,14 @@
   # Enable the X11 windowing system.
   services.xserver.enable = true;
 
+  services.cron = {
+      enable = true;
+      systemCronJobs = [
+        # Clean up Jeopardy episodes older than 30 days - runs daily at 3am
+        "0 3 * * * root find /mnt/media2/TV/Jeopardy -type f -mtime +30 -delete"
+      ];
+  };
+
   # Enable the XFCE Desktop Environment
   services.xserver.displayManager.lightdm.enable = true;
   services.xserver.desktopManager.xfce.enable = true;
@@ -528,6 +536,9 @@
         volumes = [
           "/var/lib/uptime-kuma:/app/data"
         ];
+        environment = {
+          UPTIME_KUMA_DISABLE_FRAME_SAMEORIGIN = "true";
+        };
       };
       recommendarr = {
         image = "tannermiddleton/recommendarr:latest";
@@ -584,7 +595,6 @@
     "z /mnt/media2/TV 0775 plexxy media -"
     # Restic backup directory
     "d /mnt/media2/backups 0700 root root -"
-    "d /tmp/jellyfin-transcode 0755 jellyfin render - -"
   ];
 
 
@@ -668,6 +678,7 @@
       jellyfin
       youtube
     ]))
+    vlc
     curl
     bind
     tree
