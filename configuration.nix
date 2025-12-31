@@ -35,6 +35,32 @@
   # Enable networking
   networking.networkmanager.enable = true;
 
+  # Performance optimizations for media streaming server
+  boot.kernel.sysctl = {
+    # TCP buffer sizes - critical for streaming performance
+    "net.core.rmem_max" = 33554432;  # 32 MB receive buffer
+    "net.core.wmem_max" = 33554432;  # 32 MB send buffer
+    "net.core.rmem_default" = 262144;  # 256 KB default receive
+    "net.core.wmem_default" = 262144;  # 256 KB default send
+    "net.ipv4.tcp_rmem" = "4096 262144 33554432";  # min default max
+    "net.ipv4.tcp_wmem" = "4096 262144 33554432";  # min default max
+
+    # Network queue sizes - handle more concurrent connections
+    "net.core.netdev_max_backlog" = 5000;  # increased from 1000
+    "net.ipv4.tcp_max_syn_backlog" = 8192;  # increased from 1024
+
+    # TCP performance tuning
+    "net.ipv4.tcp_congestion_control" = "bbr";  # Better congestion control than cubic
+    "net.core.default_qdisc" = "fq";  # Fair queue for BBR
+    "net.ipv4.tcp_slow_start_after_idle" = 0;  # Don't slow down after idle
+    "net.ipv4.tcp_mtu_probing" = 1;  # Enable MTU probing
+
+    # Reduce TCP keepalive time for faster detection of dead connections
+    "net.ipv4.tcp_keepalive_time" = 600;  # 10 minutes instead of 2 hours
+    "net.ipv4.tcp_keepalive_intvl" = 60;
+    "net.ipv4.tcp_keepalive_probes" = 3;
+  };
+
   # Set your time zone.
   time.timeZone = "America/New_York";
 
@@ -120,14 +146,33 @@
   fileSystems."/mnt/media1" = {
     device = "/dev/disk/by-uuid/12f58dff-3e3f-4e2d-bd9b-4831b877e0ae";
     fsType = "ext4";
-    options = ["defaults" "nofail"];
+    # Performance optimizations for read-heavy media streaming
+    options = [
+      "nofail"
+      "noatime"        # Don't update access time (reduces writes)
+      "nodiratime"     # Don't update directory access time
+      "data=writeback" # Faster writes, safe for media files
+      "commit=60"      # Commit data every 60 seconds instead of 5
+    ];
   };
 
   fileSystems."/mnt/media2" = {
     device = "/dev/disk/by-uuid/6e01d79a-2216-4c97-ab08-1560730aa181";
     fsType = "ext4";
-    options = ["defaults" "nofail"];
+    options = [
+      "nofail"
+      "noatime"
+      "nodiratime"
+      "data=writeback"
+      "commit=60"
+    ];
   };
+
+  # Increase read-ahead buffer for USB media drives (sequential read optimization)
+  services.udev.extraRules = ''
+    # Set read-ahead to 8MB for USB storage devices (better for large media files)
+    ACTION=="add|change", KERNEL=="sd[a-z]", ATTRS{idVendor}=="*", ATTR{bdi/read_ahead_kb}="8192"
+  '';
 
   services.sonarr = {
     enable = true;
@@ -557,6 +602,20 @@
           "/:/mnt/host:ro"
         ];
       };
+      homeassistant = {
+        image = "ghcr.io/home-assistant/home-assistant:stable";
+        autoStart = true;
+        extraOptions = [
+          "--network=host"
+          "--privileged"  # Allows USB device access for future Zigbee/Z-Wave testing
+        ];
+        environment = {
+          TZ = "America/New_York";
+        };
+        volumes = [
+          "/var/lib/homeassistant:/config"
+        ];
+      };
     };
   };
 
@@ -566,6 +625,7 @@
     "d /var/lib/homarr/configs 0755 root root -"
     "d /var/lib/homarr/icons 0755 root root -"
     "d /var/lib/homarr/data 0755 root root -"
+    "d /var/lib/homeassistant 0755 root root -"
     "d /var/lib/uptime-kuma 0755 root root -"
     "d /var/lib/recommendarr 0755 root root -"
     # Recyclarr directory
@@ -608,6 +668,7 @@
       6767  # Bazarr
       7575  # Homarr
       8080  # SABnzbd
+      8123  # Home Assistant
       3000  # Recommendarr
       3001  # Uptime Kuma
       3002  # Dashdot
@@ -681,10 +742,12 @@
     vlc
     curl
     bind
+    btop
     tree
     git
     restic
     recyclarr
+    mediainfo  # Video metadata analysis tool
     uv  # Modern Python package manager
     (python3.withPackages (ps: with ps; [
       requests
@@ -749,6 +812,7 @@
         "/var/lib/sabnzbd"
         "/var/lib/stash"
         "/var/lib/homarr"
+        "/var/lib/homeassistant"
         "/var/lib/uptime-kuma"
         "/var/lib/recommendarr"
         "/var/lib/recyclarr"
