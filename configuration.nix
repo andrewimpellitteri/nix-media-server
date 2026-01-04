@@ -205,7 +205,6 @@
 
   services.mealie = {
     enable = true;
-    openFirewall = true;
     port = 9000;  # Default port, change if needed
     listenAddress = "0.0.0.0";  # Listen on all interfaces
   };
