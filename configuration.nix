@@ -4,6 +4,7 @@
   imports =
     [ # Include the results of the hardware scan.
       ./hardware-configuration.nix
+      ./recipe-dredger.nix
     ];
 
   # Catppuccin theming - globally enabled
@@ -680,6 +681,7 @@
       3001  # Uptime Kuma
       3002  # Dashdot
       6969  # Whisparr
+      9000  # Mealie
       9999  # Stash
     ];
   };
