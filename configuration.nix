@@ -745,13 +745,16 @@
     btop
     tree
     git
+    mealie
     restic
     recyclarr
     mediainfo  # Video metadata analysis tool
     uv  # Modern Python package manager
     (python3.withPackages (ps: with ps; [
       requests
-      # Add other common packages here as needed
+      matplotlib
+      numpy
+      pandas
     ]))
   ];
 

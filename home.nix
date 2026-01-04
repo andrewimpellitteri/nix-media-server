@@ -147,7 +147,6 @@
     htop
     btop
     neofetch
-
     # Terminal tools
     ripgrep  # better grep
     fd       # better find
