@@ -203,6 +203,14 @@
     group = "media";
   };
 
+  services.mealie = {
+    enable = true;
+    openFirewall = true;
+    port = 9000;  # Default port, change if needed
+    listenAddress = "0.0.0.0";  # Listen on all interfaces
+  };
+
+
   # Jellyfin with hardware transcoding (Intel QuickSync)
   services.jellyfin = {
     enable = true;
@@ -745,7 +753,6 @@
     btop
     tree
     git
-    mealie
     restic
     recyclarr
     mediainfo  # Video metadata analysis tool
