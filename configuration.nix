@@ -14,19 +14,17 @@
     accent = "mauve";  # Options: rosewater, flamingo, pink, mauve, red, maroon, peach, yellow, green, teal, sky, sapphire, blue, lavender
   };
 
-  # Enable Plymouth for themed boot splash
+  # Enable Plymouth for boot splash
   boot.plymouth = {
     enable = true;
-    catppuccin.enable = true;
   };
 
-  # Bootloader with Catppuccin theme
+  # Bootloader
   boot.loader = {
     grub = {
       enable = true;
       device = "nodev";
       efiSupport = true;
-      catppuccin.enable = true;
     };
     efi.canTouchEfiVariables = true;
   };
@@ -107,12 +105,21 @@
   # Larger cursor for TV viewing
   services.xserver.displayManager.sessionCommands = ''
     ${pkgs.xorg.xsetroot}/bin/xsetroot -xcf ${pkgs.vanilla-dmz}/share/icons/Vanilla-DMZ/cursors/left_ptr 32
+
+    # Set screen timeout to 1 hour (3600 seconds)
+    ${pkgs.xorg.xset}/bin/xset s 3600 3600      # Screen saver timeout
+    ${pkgs.xorg.xset}/bin/xset dpms 3600 3600 3600  # DPMS standby/suspend/off
   '';
 
-  # Configure console keymap with Catppuccin theme
+  # Prevent automatic suspend/sleep
+  services.logind = {
+    lidSwitch = "ignore";
+    lidSwitchExternalPower = "ignore";
+  };
+
+  # Configure console keymap
   console = {
     keyMap = "dvorak";
-    catppuccin.enable = true;
   };
 
   # Enable CUPS to print documents.
@@ -154,6 +161,9 @@
       "nodiratime"     # Don't update directory access time
       "data=writeback" # Faster writes, safe for media files
       "commit=60"      # Commit data every 60 seconds instead of 5
+      # Systemd mount options to handle slow USB drives and shutdown issues
+      "x-systemd.device-timeout=30"  # Wait up to 30s for device
+      "x-systemd.mount-timeout=30"   # Wait up to 30s for mount
     ];
   };
 
@@ -166,6 +176,9 @@
       "nodiratime"
       "data=writeback"
       "commit=60"
+      # Systemd mount options to handle slow USB drives and shutdown issues
+      "x-systemd.device-timeout=30"  # Wait up to 30s for device
+      "x-systemd.mount-timeout=30"   # Wait up to 30s for mount
     ];
   };
 
@@ -310,6 +323,32 @@
     enable = true;
     group = "media";
   };
+
+  # Mosquitto MQTT broker configuration
+  environment.etc."mosquitto/mosquitto.conf".text = ''
+    listener 1883
+    allow_anonymous true
+    persistence true
+    persistence_location /mosquitto/data/
+    log_dest file /mosquitto/log/mosquitto.log
+  '';
+
+  # Zigbee2MQTT configuration
+  environment.etc."zigbee2mqtt/configuration.yaml".text = ''
+    homeassistant: true
+    permit_join: true
+    frontend:
+      port: 8080
+    mqtt:
+      base_topic: zigbee2mqtt
+      server: mqtt://172.17.0.1:1883
+    serial:
+      port: /dev/ttyUSB0
+      adapter: ezsp
+    advanced:
+      network_key: GENERATE
+      log_level: info
+  '';
 
   # Recyclarr configuration for Sonarr/Radarr quality profiles
   environment.etc."recyclarr/recyclarr.yml".text = ''
@@ -624,6 +663,68 @@
           "/var/lib/homeassistant:/config"
         ];
       };
+      mosquitto = {
+        image = "eclipse-mosquitto:2";
+        autoStart = true;
+        ports = [ "1883:1883" "9001:9001" ];
+        volumes = [
+          "/etc/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro"
+          "/var/lib/mosquitto/data:/mosquitto/data"
+          "/var/lib/mosquitto/log:/mosquitto/log"
+        ];
+      };
+      zigbee2mqtt = {
+        image = "koenkk/zigbee2mqtt:latest";
+        autoStart = true;
+        dependsOn = [ "mosquitto" ];
+        ports = [ "8124:8080" ];  # Web UI on port 8124
+        environment = {
+          TZ = "America/New_York";
+        };
+        volumes = [
+          "/var/lib/zigbee2mqtt:/app/data"
+          "/run/udev:/run/udev:ro"
+        ];
+        extraOptions = [
+          "--device=/dev/serial/by-id/usb-Itead_Sonoff_Zigbee_3.0_USB_Dongle_Plus_V2_00c80a5476f3ef11acd5c61b6d9880ab-if00-port0:/dev/ttyUSB0"
+        ];
+      };
+      esphome = {
+        image = "ghcr.io/esphome/esphome:latest";
+        autoStart = true;
+        ports = [ "6052:6052" ];
+        environment = {
+          TZ = "America/New_York";
+        };
+        volumes = [
+          "/var/lib/esphome:/config"
+        ];
+        extraOptions = [ "--privileged" ];  # Needed for USB device access
+      };
+      wyoming-whisper = {
+        image = "rhasspy/wyoming-whisper:latest";
+        autoStart = true;
+        ports = [ "10300:10300" ];
+        environment = {
+          TZ = "America/New_York";
+        };
+        volumes = [
+          "/var/lib/wyoming-whisper:/data"
+        ];
+        cmd = [ "--model" "small-int8" "--language" "en" ];
+      };
+      wyoming-piper = {
+        image = "rhasspy/wyoming-piper:latest";
+        autoStart = true;
+        ports = [ "10200:10200" ];
+        environment = {
+          TZ = "America/New_York";
+        };
+        volumes = [
+          "/var/lib/wyoming-piper:/data"
+        ];
+        cmd = [ "--voice" "en_US-lessac-medium" ];
+      };
     };
   };
 
@@ -634,6 +735,14 @@
     "d /var/lib/homarr/icons 0755 root root -"
     "d /var/lib/homarr/data 0755 root root -"
     "d /var/lib/homeassistant 0755 root root -"
+    "d /var/lib/mosquitto 0755 root root -"
+    "d /var/lib/mosquitto/config 0755 root root -"
+    "d /var/lib/mosquitto/data 0755 root root -"
+    "d /var/lib/mosquitto/log 0755 root root -"
+    "d /var/lib/zigbee2mqtt 0755 root root -"
+    "d /var/lib/esphome 0755 root root -"
+    "d /var/lib/wyoming-whisper 0755 root root -"
+    "d /var/lib/wyoming-piper 0755 root root -"
     "d /var/lib/uptime-kuma 0755 root root -"
     "d /var/lib/recommendarr 0755 root root -"
     # Recyclarr directory
@@ -683,6 +792,11 @@
       6969  # Whisparr
       9000  # Mealie
       9999  # Stash
+      8124  # Zigbee2MQTT
+      1883  # MQTT
+      6052  # ESPHome
+      10200 # Wyoming Piper (TTS)
+      10300 # Wyoming Whisper (STT)
     ];
   };
 
@@ -712,7 +826,7 @@
       plugins = [ "git" "docker" "sudo" ];
     };
     shellAliases = {
-      nrs = "sudo nixos-rebuild switch --flake /etc/nixos#nixos";
+      nrs = "nix-shell -p git --run 'sudo nixos-rebuild switch --flake /etc/nixos#nixos'";
       # Python shortcuts
       py = "python3";
       ipy = "python3 -i";  # Interactive Python
